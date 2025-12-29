@@ -7,12 +7,17 @@ interface ToolbarProps {
   boardId: string
 }
 
-const tools: { id: Tool; label: string; icon: string }[] = [
-  { id: 'select', label: 'Select', icon: '↖' },
-  { id: 'pen', label: 'Pen', icon: '✏️' },
-  { id: 'marker', label: 'Marker', icon: '🖊️' },
-  { id: 'highlighter', label: 'Highlighter', icon: '🖍️' },
-  { id: 'eraser', label: 'Eraser', icon: '🧹' },
+const tools: { id: Tool; label: string; icon: string; shortcut?: string }[] = [
+  { id: 'select', label: 'Select (V)', icon: '↖', shortcut: 'V' },
+  { id: 'pen', label: 'Pen (P)', icon: '✏️', shortcut: 'P' },
+  { id: 'marker', label: 'Marker (M)', icon: '🖊️', shortcut: 'M' },
+  { id: 'highlighter', label: 'Highlighter (H)', icon: '🖍️', shortcut: 'H' },
+  { id: 'rectangle', label: 'Rectangle (R)', icon: '▢', shortcut: 'R' },
+  { id: 'circle', label: 'Circle (O)', icon: '○', shortcut: 'O' },
+  { id: 'line', label: 'Line (L)', icon: '╱', shortcut: 'L' },
+  { id: 'arrow', label: 'Arrow (A)', icon: '→', shortcut: 'A' },
+  { id: 'text', label: 'Text (T)', icon: 'T', shortcut: 'T' },
+  { id: 'eraser', label: 'Eraser (E)', icon: '🧹', shortcut: 'E' },
 ]
 
 const colors = [
