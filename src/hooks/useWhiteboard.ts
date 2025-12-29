@@ -1,16 +1,23 @@
 'use client'
 
-import { useRef, useCallback, useEffect } from 'react'
+import { useRef, useCallback, useEffect, useState } from 'react'
 import { Canvas } from 'fabric'
 import { HistoryManager } from '@/lib/history'
 import { StorageManager } from '@/lib/storage'
 import { exportToPNG, exportToSVG, exportToJSON, importFromJSON } from '@/lib/export'
+import { CollaborationProvider, UserAwareness } from '@/lib/collaboration/yjs-provider'
+import { CanvasSync } from '@/lib/collaboration/sync'
 import { useCanvasStore } from '@/stores/canvas-store'
 
 export function useWhiteboard(boardId: string) {
   const canvasRef = useRef<Canvas | null>(null)
   const historyRef = useRef<HistoryManager | null>(null)
   const storageRef = useRef<StorageManager | null>(null)
+  const collaborationRef = useRef<CollaborationProvider | null>(null)
+  const syncRef = useRef<CanvasSync | null>(null)
+
+  const [collaborators, setCollaborators] = useState<UserAwareness[]>([])
+  const [isConnected, setIsConnected] = useState(false)
 
   const { setCanUndo, setCanRedo } = useCanvasStore()
 
@@ -27,7 +34,52 @@ export function useWhiteboard(boardId: string) {
     // Initialize storage
     storageRef.current = new StorageManager(boardId)
     storageRef.current.init(canvas)
+
+    // Initialize collaboration
+    collaborationRef.current = new CollaborationProvider(boardId)
+
+    // Wait a bit for storage to load, then init sync
+    setTimeout(() => {
+      if (canvasRef.current && collaborationRef.current) {
+        syncRef.current = new CanvasSync(canvasRef.current, collaborationRef.current)
+
+        // Handle collaborator changes
+        syncRef.current.onUsersChange = (users) => {
+          setCollaborators(users)
+        }
+
+        // Load remote state or sync current state
+        const remoteObjects = collaborationRef.current.getAllObjects()
+        if (remoteObjects.size > 0) {
+          syncRef.current.loadRemoteState()
+        } else {
+          syncRef.current.syncCurrentState()
+        }
+
+        // Update connection status
+        setIsConnected(collaborationRef.current.isConnected())
+      }
+    }, 500)
   }, [boardId, setCanUndo, setCanRedo])
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      syncRef.current?.destroy()
+      collaborationRef.current?.destroy()
+    }
+  }, [])
+
+  // Check connection status periodically
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (collaborationRef.current) {
+        setIsConnected(collaborationRef.current.isConnected())
+      }
+    }, 2000)
+
+    return () => clearInterval(interval)
+  }, [])
 
   const undo = useCallback(() => {
     historyRef.current?.undo()
@@ -68,6 +120,11 @@ export function useWhiteboard(boardId: string) {
       canvasRef.current.backgroundColor = '#ffffff'
       canvasRef.current.renderAll()
       historyRef.current?.saveState()
+
+      // Clear remote objects too
+      if (collaborationRef.current) {
+        collaborationRef.current.syncAllObjects(new Map())
+      }
     }
   }, [])
 
@@ -103,5 +160,7 @@ export function useWhiteboard(boardId: string) {
     exportJSON,
     importJSON,
     clearCanvas,
+    collaborators,
+    isConnected,
   }
 }

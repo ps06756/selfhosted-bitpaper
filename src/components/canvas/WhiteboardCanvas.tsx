@@ -6,6 +6,7 @@ import { useCanvasStore } from '@/stores/canvas-store'
 import { useWhiteboardContext } from '@/contexts/WhiteboardContext'
 import { Tool } from '@/types/canvas'
 import ZoomControls from './ZoomControls'
+import CursorOverlay from './CursorOverlay'
 
 interface WhiteboardCanvasProps {
   boardId: string
@@ -21,9 +22,10 @@ export default function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps) {
   const isPanningRef = useRef(false)
   const lastPanPointRef = useRef<{ x: number; y: number } | null>(null)
   const [spacePressed, setSpacePressed] = useState(false)
+  const [viewportTransform, setViewportTransform] = useState<number[] | null>(null)
 
   const { tool, strokeColor, strokeWidth, fillColor, setTool, zoom, setZoom } = useCanvasStore()
-  const { initCanvas } = useWhiteboardContext()
+  const { initCanvas, collaborators } = useWhiteboardContext()
 
   // Zoom functions
   const zoomIn = useCallback(() => {
@@ -442,11 +444,23 @@ export default function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps) {
     }
   }, [tool, strokeColor, strokeWidth, fillColor, spacePressed])
 
+  // Update viewport transform when zoom changes
+  useEffect(() => {
+    if (fabricRef.current) {
+      setViewportTransform(fabricRef.current.viewportTransform ? [...fabricRef.current.viewportTransform] : null)
+    }
+  }, [zoom])
+
   return (
     <div ref={containerRef} className="w-full h-full relative">
       <canvas
         ref={canvasRef}
         className={spacePressed ? 'cursor-grab' : 'cursor-crosshair'}
+      />
+      <CursorOverlay
+        users={collaborators}
+        zoom={zoom}
+        viewportTransform={viewportTransform}
       />
       <ZoomControls
         onZoomIn={zoomIn}
