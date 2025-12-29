@@ -1,10 +1,11 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
-import { Canvas, PencilBrush, FabricObject, Rect, Ellipse, Line, IText, Polygon } from 'fabric'
+import { useEffect, useRef, useCallback, useState } from 'react'
+import { Canvas, PencilBrush, FabricObject, Rect, Ellipse, Line, IText, Polygon, Point } from 'fabric'
 import { useCanvasStore } from '@/stores/canvas-store'
 import { useWhiteboardContext } from '@/contexts/WhiteboardContext'
 import { Tool } from '@/types/canvas'
+import ZoomControls from './ZoomControls'
 
 interface WhiteboardCanvasProps {
   boardId: string
@@ -17,9 +18,34 @@ export default function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps) {
   const isDrawingShapeRef = useRef(false)
   const startPointRef = useRef<{ x: number; y: number } | null>(null)
   const currentShapeRef = useRef<FabricObject | null>(null)
+  const isPanningRef = useRef(false)
+  const lastPanPointRef = useRef<{ x: number; y: number } | null>(null)
+  const [spacePressed, setSpacePressed] = useState(false)
 
-  const { tool, strokeColor, strokeWidth, fillColor, setTool } = useCanvasStore()
+  const { tool, strokeColor, strokeWidth, fillColor, setTool, zoom, setZoom } = useCanvasStore()
   const { initCanvas } = useWhiteboardContext()
+
+  // Zoom functions
+  const zoomIn = useCallback(() => {
+    if (!fabricRef.current) return
+    const newZoom = Math.min(zoom * 1.2, 5)
+    fabricRef.current.setZoom(newZoom)
+    setZoom(newZoom)
+  }, [zoom, setZoom])
+
+  const zoomOut = useCallback(() => {
+    if (!fabricRef.current) return
+    const newZoom = Math.max(zoom / 1.2, 0.1)
+    fabricRef.current.setZoom(newZoom)
+    setZoom(newZoom)
+  }, [zoom, setZoom])
+
+  const zoomReset = useCallback(() => {
+    if (!fabricRef.current) return
+    fabricRef.current.setZoom(1)
+    fabricRef.current.setViewportTransform([1, 0, 0, 1, 0, 0])
+    setZoom(1)
+  }, [setZoom])
 
   // Initialize canvas
   useEffect(() => {
@@ -53,12 +79,33 @@ export default function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps) {
     handleResize()
     window.addEventListener('resize', handleResize)
 
+    // Handle zoom with scroll wheel
+    const handleWheel = (e: WheelEvent) => {
+      if (!fabricRef.current) return
+      e.preventDefault()
+
+      const delta = e.deltaY
+      let newZoom = fabricRef.current.getZoom()
+      newZoom *= 0.999 ** delta
+
+      // Clamp zoom
+      newZoom = Math.max(0.1, Math.min(5, newZoom))
+
+      // Zoom to cursor position
+      const point = new Point(e.offsetX, e.offsetY)
+      fabricRef.current.zoomToPoint(point, newZoom)
+      setZoom(newZoom)
+    }
+
+    canvas.upperCanvasEl?.addEventListener('wheel', handleWheel, { passive: false })
+
     return () => {
       window.removeEventListener('resize', handleResize)
+      canvas.upperCanvasEl?.removeEventListener('wheel', handleWheel)
       canvas.dispose()
       fabricRef.current = null
     }
-  }, [initCanvas])
+  }, [initCanvas, setZoom])
 
   // Update drawing mode based on tool
   useEffect(() => {
@@ -68,7 +115,7 @@ export default function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps) {
     const isDrawingTool = ['pen', 'marker', 'highlighter'].includes(tool)
     const isShapeTool = ['rectangle', 'circle', 'line', 'arrow'].includes(tool)
 
-    canvas.isDrawingMode = isDrawingTool
+    canvas.isDrawingMode = isDrawingTool && !spacePressed
 
     if (isDrawingTool && canvas.freeDrawingBrush) {
       canvas.freeDrawingBrush.color = strokeColor
@@ -82,7 +129,7 @@ export default function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps) {
     }
 
     // Selection mode
-    if (tool === 'select') {
+    if (tool === 'select' && !spacePressed) {
       canvas.selection = true
       canvas.forEachObject((obj: FabricObject) => {
         obj.selectable = true
@@ -98,7 +145,7 @@ export default function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps) {
     }
 
     canvas.renderAll()
-  }, [tool, strokeColor, strokeWidth])
+  }, [tool, strokeColor, strokeWidth, spacePressed])
 
   // Update brush color and width
   useEffect(() => {
@@ -108,10 +155,16 @@ export default function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps) {
     fabricRef.current.freeDrawingBrush.width = strokeWidth
   }, [strokeColor, strokeWidth])
 
-  // Handle keyboard shortcuts for tools and delete
+  // Handle keyboard shortcuts for tools, delete, and zoom
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!fabricRef.current) return
+
+      // Space for panning
+      if (e.code === 'Space' && !e.repeat) {
+        setSpacePressed(true)
+        return
+      }
 
       // Don't handle shortcuts when typing in text
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
@@ -127,6 +180,23 @@ export default function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps) {
           fabricRef.current.renderAll()
         }
         e.preventDefault()
+        return
+      }
+
+      // Zoom shortcuts
+      if ((e.metaKey || e.ctrlKey) && (e.key === '=' || e.key === '+')) {
+        e.preventDefault()
+        zoomIn()
+        return
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key === '-') {
+        e.preventDefault()
+        zoomOut()
+        return
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key === '0') {
+        e.preventDefault()
+        zoomReset()
         return
       }
 
@@ -151,11 +221,23 @@ export default function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps) {
       }
     }
 
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [tool, setTool])
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.code === 'Space') {
+        setSpacePressed(false)
+        isPanningRef.current = false
+        lastPanPointRef.current = null
+      }
+    }
 
-  // Shape drawing and eraser functionality
+    window.addEventListener('keydown', handleKeyDown)
+    window.addEventListener('keyup', handleKeyUp)
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown)
+      window.removeEventListener('keyup', handleKeyUp)
+    }
+  }, [tool, setTool, zoomIn, zoomOut, zoomReset])
+
+  // Shape drawing, eraser, and panning functionality
   useEffect(() => {
     if (!fabricRef.current) return
     const canvas = fabricRef.current
@@ -163,6 +245,15 @@ export default function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps) {
     const isShapeTool = ['rectangle', 'circle', 'line', 'arrow'].includes(tool)
 
     const handleMouseDown = (e: any) => {
+      // Panning with space
+      if (spacePressed) {
+        isPanningRef.current = true
+        const point = canvas.getScenePoint(e.e)
+        lastPanPointRef.current = { x: e.e.clientX, y: e.e.clientY }
+        canvas.selection = false
+        return
+      }
+
       // Eraser
       if (tool === 'eraser') {
         const target = canvas.findTarget(e.e)
@@ -240,6 +331,18 @@ export default function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps) {
     }
 
     const handleMouseMove = (e: any) => {
+      // Panning
+      if (isPanningRef.current && lastPanPointRef.current) {
+        const vpt = canvas.viewportTransform
+        if (vpt) {
+          vpt[4] += e.e.clientX - lastPanPointRef.current.x
+          vpt[5] += e.e.clientY - lastPanPointRef.current.y
+          canvas.requestRenderAll()
+          lastPanPointRef.current = { x: e.e.clientX, y: e.e.clientY }
+        }
+        return
+      }
+
       if (!isDrawingShapeRef.current || !startPointRef.current || !currentShapeRef.current) return
 
       const pointer = canvas.getScenePoint(e.e)
@@ -280,6 +383,13 @@ export default function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps) {
     }
 
     const handleMouseUp = () => {
+      // End panning
+      if (isPanningRef.current) {
+        isPanningRef.current = false
+        lastPanPointRef.current = null
+        return
+      }
+
       if (!isDrawingShapeRef.current || !currentShapeRef.current) return
 
       // Add arrowhead if arrow tool
@@ -330,11 +440,19 @@ export default function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps) {
       canvas.off('mouse:move', handleMouseMove)
       canvas.off('mouse:up', handleMouseUp)
     }
-  }, [tool, strokeColor, strokeWidth, fillColor])
+  }, [tool, strokeColor, strokeWidth, fillColor, spacePressed])
 
   return (
-    <div ref={containerRef} className="w-full h-full cursor-crosshair">
-      <canvas ref={canvasRef} />
+    <div ref={containerRef} className="w-full h-full relative">
+      <canvas
+        ref={canvasRef}
+        className={spacePressed ? 'cursor-grab' : 'cursor-crosshair'}
+      />
+      <ZoomControls
+        onZoomIn={zoomIn}
+        onZoomOut={zoomOut}
+        onZoomReset={zoomReset}
+      />
     </div>
   )
 }
