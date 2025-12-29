@@ -38,9 +38,10 @@ export function useWhiteboard(boardId: string) {
     // Initialize collaboration
     collaborationRef.current = new CollaborationProvider(boardId)
 
-    // Wait a bit for storage to load, then init sync
-    setTimeout(() => {
+    // Set up the onReady callback to initialize sync when provider is ready
+    collaborationRef.current.onReady = () => {
       if (canvasRef.current && collaborationRef.current) {
+        console.log('Provider ready, initializing sync...')
         syncRef.current = new CanvasSync(canvasRef.current, collaborationRef.current)
 
         // Handle collaborator changes
@@ -59,7 +60,12 @@ export function useWhiteboard(boardId: string) {
         // Update connection status
         setIsConnected(collaborationRef.current.isConnected())
       }
-    }, 500)
+    }
+
+    // If provider is already ready (unlikely but handle it), init sync now
+    if (collaborationRef.current.isReady) {
+      collaborationRef.current.onReady()
+    }
   }, [boardId, setCanUndo, setCanRedo])
 
   // Cleanup on unmount

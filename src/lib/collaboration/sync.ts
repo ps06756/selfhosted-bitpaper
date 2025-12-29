@@ -1,4 +1,4 @@
-import { Canvas, FabricObject } from 'fabric'
+import { Canvas, FabricObject, util } from 'fabric'
 import { CollaborationProvider, UserAwareness } from './yjs-provider'
 import { v4 as uuidv4 } from 'uuid'
 
@@ -166,11 +166,11 @@ export class CanvasSync {
 
   private async createObjectFromData(id: string, data: any) {
     try {
-      // Use Fabric's enlivenObjects to recreate the object
-      const objects = await (this.canvas as any).constructor.util.enlivenObjects([data])
+      // Use Fabric's enlivenObjects to recreate the object (Fabric.js v6 API)
+      const objects = await util.enlivenObjects([data])
 
       if (objects && objects.length > 0) {
-        const obj = objects[0]
+        const obj = objects[0] as FabricObject
         ;(obj as any).__syncId = id
         obj.selectable = true
         obj.evented = true

@@ -31,7 +31,7 @@ const strokeWidths = [2, 4, 6, 10, 16]
 
 export default function Toolbar({ boardId }: ToolbarProps) {
   const { tool, setTool, strokeColor, setStrokeColor, strokeWidth, setStrokeWidth, canUndo, canRedo } = useCanvasStore()
-  const { undo, redo, exportPNG, exportSVG, exportJSON, importJSON, clearCanvas } = useWhiteboardContext()
+  const { undo, redo, exportPNG, exportSVG, exportJSON, importJSON, clearCanvas, collaborators, isConnected } = useWhiteboardContext()
   const [showExportMenu, setShowExportMenu] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -200,6 +200,37 @@ export default function Toolbar({ boardId }: ToolbarProps) {
           onChange={handleImport}
           className="hidden"
         />
+      </div>
+
+      {/* Connection status */}
+      <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-50">
+        <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-gray-400'}`} />
+        <span className="text-sm text-gray-600">
+          {isConnected ? (
+            collaborators.length > 0
+              ? `${collaborators.length + 1} online`
+              : 'Connected'
+          ) : 'Connecting...'}
+        </span>
+        {collaborators.length > 0 && (
+          <div className="flex -space-x-2">
+            {collaborators.slice(0, 3).map((user) => (
+              <div
+                key={user.id}
+                className="w-6 h-6 rounded-full border-2 border-white flex items-center justify-center text-white text-xs font-medium"
+                style={{ backgroundColor: user.color }}
+                title={user.name}
+              >
+                {user.name[0]}
+              </div>
+            ))}
+            {collaborators.length > 3 && (
+              <div className="w-6 h-6 rounded-full border-2 border-white bg-gray-400 flex items-center justify-center text-white text-xs font-medium">
+                +{collaborators.length - 3}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Share button */}

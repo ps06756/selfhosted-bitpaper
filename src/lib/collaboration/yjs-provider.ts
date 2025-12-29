@@ -1,5 +1,4 @@
 import * as Y from 'yjs'
-import { WebrtcProvider } from 'y-webrtc'
 
 export interface UserAwareness {
   id: string
@@ -20,14 +19,16 @@ const NAMES = [
 
 export class CollaborationProvider {
   doc: Y.Doc
-  provider: WebrtcProvider | null = null
+  provider: any = null
   canvasObjects: Y.Map<any>
-  awareness: any
+  awareness: any = null
   userId: string
   userName: string
   userColor: string
   onRemoteChange: ((objects: Map<string, any>) => void) | null = null
   onAwarenessChange: ((users: UserAwareness[]) => void) | null = null
+  onReady: (() => void) | null = null
+  private _isReady = false
 
   constructor(roomId: string) {
     this.doc = new Y.Doc()
@@ -44,36 +45,70 @@ export class CollaborationProvider {
     }
   }
 
-  private initProvider(roomId: string) {
-    // Use public signaling servers
-    this.provider = new WebrtcProvider(`openboard-${roomId}`, this.doc, {
-      signaling: [
-        'wss://signaling.yjs.dev',
-        'wss://y-webrtc-signaling-eu.herokuapp.com',
-        'wss://y-webrtc-signaling-us.herokuapp.com',
-      ],
-    })
+  get isReady(): boolean {
+    return this._isReady
+  }
 
-    this.awareness = this.provider.awareness
+  private async initProvider(roomId: string) {
+    try {
+      // Dynamic import to avoid SSR issues
+      const { WebsocketProvider } = await import('y-websocket')
 
-    // Set local user state
-    this.awareness.setLocalState({
-      id: this.userId,
-      name: this.userName,
-      color: this.userColor,
-      cursor: null,
-    })
+      // Connect to local WebSocket server
+      // In production, this would be your deployed WebSocket server URL
+      const wsUrl = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:1234'
 
-    // Listen for awareness changes (other users)
-    this.awareness.on('change', () => {
-      this.handleAwarenessChange()
-    })
+      this.provider = new WebsocketProvider(wsUrl, `openboard-${roomId}`, this.doc)
 
-    // Listen for remote changes to canvas objects
-    this.canvasObjects.observe((event) => {
-      if (event.transaction.local) return // Ignore local changes
-      this.handleRemoteChange()
-    })
+      this.awareness = this.provider.awareness
+
+      // Set local user state
+      this.awareness.setLocalState({
+        id: this.userId,
+        name: this.userName,
+        color: this.userColor,
+        cursor: null,
+      })
+
+      // Listen for connection status
+      this.provider.on('status', (event: { status: string }) => {
+        console.log('WebSocket status:', event.status)
+        if (event.status === 'connected') {
+          this._isReady = true
+          if (this.onReady) {
+            this.onReady()
+          }
+        }
+      })
+
+      // Listen for sync completion
+      this.provider.on('sync', (isSynced: boolean) => {
+        console.log('Yjs synced:', isSynced)
+      })
+
+      // Listen for awareness changes (other users)
+      this.awareness.on('change', () => {
+        this.handleAwarenessChange()
+      })
+
+      // Listen for remote changes to canvas objects
+      this.canvasObjects.observe((event: Y.YMapEvent<any>) => {
+        if (event.transaction.local) return // Ignore local changes
+        this.handleRemoteChange()
+      })
+
+      console.log('Collaboration provider initialized for room:', roomId)
+
+      // If already connected, trigger ready
+      if (this.provider.wsconnected) {
+        this._isReady = true
+        if (this.onReady) {
+          this.onReady()
+        }
+      }
+    } catch (error) {
+      console.error('Failed to initialize collaboration provider:', error)
+    }
   }
 
   private handleAwarenessChange() {
@@ -164,7 +199,7 @@ export class CollaborationProvider {
 
   // Get connection status
   isConnected(): boolean {
-    return this.provider?.connected ?? false
+    return this.provider?.wsconnected ?? false
   }
 
   // Get number of connected peers

@@ -4,17 +4,23 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:ws": "HOST=localhost PORT=1234 npx y-websocket",
+    "dev:all": "HOST=localhost PORT=1234 npx y-websocket & next dev",
     "build": "next build",
     "start": "next start",
+    "start:ws": "node server.js",
     "lint": "next lint"
   },
   "dependencies": {
+    "@y/websocket-server": "^0.1.1",
     "fabric": "^6.5.0",
-    "next": "^14.2.0",
+    "next": "^16.1.1",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "uuid": "^9.0.0",
+    "ws": "^8.18.3",
     "y-webrtc": "^10.3.0",
+    "y-websocket": "^3.0.0",
     "yjs": "^13.6.28",
     "zustand": "^4.5.0"
   },

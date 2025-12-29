@@ -51,12 +51,29 @@ export default function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps) {
 
   // Initialize canvas
   useEffect(() => {
-    if (!canvasRef.current || fabricRef.current) return
+    if (!canvasRef.current || !containerRef.current || fabricRef.current) return
+
+    // Get initial dimensions
+    const { width, height } = containerRef.current.getBoundingClientRect()
+
+    // Don't initialize if container has no size yet
+    if (width === 0 || height === 0) {
+      // Retry after a short delay
+      const timeout = setTimeout(() => {
+        // Force re-render to retry
+        if (containerRef.current) {
+          containerRef.current.style.opacity = '1'
+        }
+      }, 100)
+      return () => clearTimeout(timeout)
+    }
 
     const canvas = new Canvas(canvasRef.current, {
       isDrawingMode: true,
       backgroundColor: '#ffffff',
       selection: true,
+      width,
+      height,
     })
 
     // Set up pencil brush
@@ -74,11 +91,13 @@ export default function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps) {
     const handleResize = () => {
       if (!containerRef.current || !fabricRef.current) return
       const { width, height } = containerRef.current.getBoundingClientRect()
-      fabricRef.current.setDimensions({ width, height })
-      fabricRef.current.renderAll()
+      if (width > 0 && height > 0) {
+        fabricRef.current.setDimensions({ width, height })
+        fabricRef.current.renderAll()
+      }
     }
 
-    handleResize()
+    // Initial resize already done via constructor
     window.addEventListener('resize', handleResize)
 
     // Handle zoom with scroll wheel
