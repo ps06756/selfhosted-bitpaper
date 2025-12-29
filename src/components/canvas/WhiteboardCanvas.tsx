@@ -3,6 +3,7 @@
 import { useEffect, useRef } from 'react'
 import { Canvas, PencilBrush, FabricObject, Rect, Ellipse, Line, IText, Polygon } from 'fabric'
 import { useCanvasStore } from '@/stores/canvas-store'
+import { useWhiteboardContext } from '@/contexts/WhiteboardContext'
 import { Tool } from '@/types/canvas'
 
 interface WhiteboardCanvasProps {
@@ -18,6 +19,7 @@ export default function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps) {
   const currentShapeRef = useRef<FabricObject | null>(null)
 
   const { tool, strokeColor, strokeWidth, fillColor, setTool } = useCanvasStore()
+  const { initCanvas } = useWhiteboardContext()
 
   // Initialize canvas
   useEffect(() => {
@@ -37,6 +39,9 @@ export default function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps) {
 
     fabricRef.current = canvas
 
+    // Initialize whiteboard context (history + storage)
+    initCanvas(canvas)
+
     // Handle resize
     const handleResize = () => {
       if (!containerRef.current || !fabricRef.current) return
@@ -53,7 +58,7 @@ export default function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps) {
       canvas.dispose()
       fabricRef.current = null
     }
-  }, [])
+  }, [initCanvas])
 
   // Update drawing mode based on tool
   useEffect(() => {

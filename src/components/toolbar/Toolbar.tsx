@@ -1,6 +1,8 @@
 'use client'
 
+import { useState, useRef } from 'react'
 import { useCanvasStore } from '@/stores/canvas-store'
+import { useWhiteboardContext } from '@/contexts/WhiteboardContext'
 import { Tool } from '@/types/canvas'
 
 interface ToolbarProps {
@@ -28,11 +30,29 @@ const colors = [
 const strokeWidths = [2, 4, 6, 10, 16]
 
 export default function Toolbar({ boardId }: ToolbarProps) {
-  const { tool, setTool, strokeColor, setStrokeColor, strokeWidth, setStrokeWidth } = useCanvasStore()
+  const { tool, setTool, strokeColor, setStrokeColor, strokeWidth, setStrokeWidth, canUndo, canRedo } = useCanvasStore()
+  const { undo, redo, exportPNG, exportSVG, exportJSON, importJSON, clearCanvas } = useWhiteboardContext()
+  const [showExportMenu, setShowExportMenu] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const copyLink = () => {
     navigator.clipboard.writeText(window.location.href)
     alert('Link copied to clipboard!')
+  }
+
+  const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      importJSON(file).then(() => {
+        alert('Board imported successfully!')
+      }).catch((err) => {
+        alert('Failed to import: ' + err.message)
+      })
+    }
+    // Reset input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+    }
   }
 
   return (
@@ -96,8 +116,91 @@ export default function Toolbar({ boardId }: ToolbarProps) {
         ))}
       </div>
 
+      {/* Undo/Redo */}
+      <div className="flex items-center gap-1 border-r border-gray-200 pr-4">
+        <button
+          onClick={undo}
+          disabled={!canUndo}
+          className={`p-2 rounded-lg transition-colors ${
+            canUndo ? 'hover:bg-gray-100 text-gray-600' : 'text-gray-300 cursor-not-allowed'
+          }`}
+          title="Undo (Ctrl+Z)"
+        >
+          <span className="text-lg">↩️</span>
+        </button>
+        <button
+          onClick={redo}
+          disabled={!canRedo}
+          className={`p-2 rounded-lg transition-colors ${
+            canRedo ? 'hover:bg-gray-100 text-gray-600' : 'text-gray-300 cursor-not-allowed'
+          }`}
+          title="Redo (Ctrl+Shift+Z)"
+        >
+          <span className="text-lg">↪️</span>
+        </button>
+      </div>
+
       {/* Spacer */}
       <div className="flex-1" />
+
+      {/* Clear canvas */}
+      <button
+        onClick={() => {
+          if (confirm('Clear the entire canvas? This cannot be undone.')) {
+            clearCanvas()
+          }
+        }}
+        className="px-3 py-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors text-sm"
+        title="Clear canvas"
+      >
+        Clear
+      </button>
+
+      {/* Export menu */}
+      <div className="relative">
+        <button
+          onClick={() => setShowExportMenu(!showExportMenu)}
+          className="px-3 py-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors text-sm"
+        >
+          Export
+        </button>
+        {showExportMenu && (
+          <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg py-1 min-w-[140px] z-50">
+            <button
+              onClick={() => { exportPNG(); setShowExportMenu(false); }}
+              className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
+            >
+              Export as PNG
+            </button>
+            <button
+              onClick={() => { exportSVG(); setShowExportMenu(false); }}
+              className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
+            >
+              Export as SVG
+            </button>
+            <button
+              onClick={() => { exportJSON(); setShowExportMenu(false); }}
+              className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
+            >
+              Export as JSON
+            </button>
+            <hr className="my-1 border-gray-200" />
+            <button
+              onClick={() => { fileInputRef.current?.click(); setShowExportMenu(false); }}
+              className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
+            >
+              Import JSON
+            </button>
+          </div>
+        )}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".json"
+          onChange={handleImport}
+          className="hidden"
+        />
+      </div>
 
       {/* Share button */}
       <button
