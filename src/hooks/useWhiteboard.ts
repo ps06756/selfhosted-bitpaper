@@ -8,6 +8,8 @@ import { exportToPNG, exportToSVG, exportToJSON, importFromJSON } from '@/lib/ex
 import { CollaborationProvider, UserAwareness } from '@/lib/collaboration/yjs-provider'
 import { CanvasSync } from '@/lib/collaboration/sync'
 import { useCanvasStore } from '@/stores/canvas-store'
+import { canEditBoard, claimBoardOwnership, getViewOnlyLink, getEditLink, transferBoardOwnership } from '@/lib/permissions'
+import { useAuth } from '@/contexts/AuthContext'
 
 export function useWhiteboard(boardId: string) {
   const canvasRef = useRef<Canvas | null>(null)
@@ -18,8 +20,27 @@ export function useWhiteboard(boardId: string) {
 
   const [collaborators, setCollaborators] = useState<UserAwareness[]>([])
   const [isConnected, setIsConnected] = useState(false)
+  const [canEdit, setCanEdit] = useState(true)
 
   const { setCanUndo, setCanRedo } = useCanvasStore()
+  const { user } = useAuth()
+
+  // Check edit permissions on mount and when user changes
+  useEffect(() => {
+    const userId = user?.id
+    const hasEditPermission = canEditBoard(boardId, userId)
+    setCanEdit(hasEditPermission)
+
+    // Claim ownership if this is a new board and we can edit
+    if (hasEditPermission) {
+      claimBoardOwnership(boardId, userId)
+    }
+
+    // Transfer ownership to logged-in user if they created the board anonymously
+    if (userId && hasEditPermission) {
+      transferBoardOwnership(boardId, userId)
+    }
+  }, [boardId, user])
 
   const initCanvas = useCallback((canvas: Canvas) => {
     canvasRef.current = canvas
@@ -157,6 +178,10 @@ export function useWhiteboard(boardId: string) {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [undo, redo])
 
+  // Generate share links
+  const getShareLink = useCallback(() => getViewOnlyLink(boardId), [boardId])
+  const getOwnerLink = useCallback(() => getEditLink(boardId), [boardId])
+
   return {
     initCanvas,
     undo,
@@ -168,5 +193,8 @@ export function useWhiteboard(boardId: string) {
     clearCanvas,
     collaborators,
     isConnected,
+    canEdit,
+    getShareLink,
+    getOwnerLink,
   }
 }

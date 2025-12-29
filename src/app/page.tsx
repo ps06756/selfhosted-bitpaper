@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
-import { v4 as uuidv4 } from 'uuid'
+import { generateBoardId } from '@/lib/board-id'
 import { StorageManager, BoardMetadata } from '@/lib/storage'
 
 export default function Home() {
@@ -14,7 +14,7 @@ export default function Home() {
   }, [])
 
   const createNewBoard = () => {
-    const boardId = uuidv4().slice(0, 8)
+    const boardId = generateBoardId()
     router.push(`/board/${boardId}`)
   }
 

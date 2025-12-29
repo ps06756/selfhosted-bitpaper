@@ -4,6 +4,8 @@ import { useState, useRef } from 'react'
 import { useCanvasStore } from '@/stores/canvas-store'
 import { useWhiteboardContext } from '@/contexts/WhiteboardContext'
 import { Tool } from '@/types/canvas'
+import UserMenu from '@/components/auth/UserMenu'
+import LoginModal from '@/components/auth/LoginModal'
 
 interface ToolbarProps {
   boardId: string
@@ -31,13 +33,16 @@ const strokeWidths = [2, 4, 6, 10, 16]
 
 export default function Toolbar({ boardId }: ToolbarProps) {
   const { tool, setTool, strokeColor, setStrokeColor, strokeWidth, setStrokeWidth, canUndo, canRedo } = useCanvasStore()
-  const { undo, redo, exportPNG, exportSVG, exportJSON, importJSON, clearCanvas, collaborators, isConnected } = useWhiteboardContext()
+  const { undo, redo, exportPNG, exportSVG, exportJSON, importJSON, clearCanvas, collaborators, isConnected, canEdit, getShareLink } = useWhiteboardContext()
   const [showExportMenu, setShowExportMenu] = useState(false)
+  const [showLoginModal, setShowLoginModal] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const copyLink = () => {
-    navigator.clipboard.writeText(window.location.href)
-    alert('Link copied to clipboard!')
+    // Copy view-only link for viewers, edit link for owners
+    const link = canEdit ? getShareLink() : window.location.href
+    navigator.clipboard.writeText(link)
+    alert(canEdit ? 'View-only link copied! Share this with students.' : 'Link copied to clipboard!')
   }
 
   const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -60,101 +65,116 @@ export default function Toolbar({ boardId }: ToolbarProps) {
       {/* Logo / Board name */}
       <div className="font-semibold text-gray-700 mr-4">
         OpenBoard
+        {!canEdit && (
+          <span className="ml-2 text-xs text-orange-600 bg-orange-100 px-2 py-0.5 rounded">
+            View Only
+          </span>
+        )}
       </div>
 
-      {/* Tool buttons */}
-      <div className="flex items-center gap-1 border-r border-gray-200 pr-4">
-        {tools.map((t) => (
-          <button
-            key={t.id}
-            onClick={() => setTool(t.id)}
-            className={`p-2 rounded-lg transition-colors ${
-              tool === t.id
-                ? 'bg-blue-100 text-blue-700'
-                : 'hover:bg-gray-100 text-gray-600'
-            }`}
-            title={t.label}
-          >
-            <span className="text-lg">{t.icon}</span>
-          </button>
-        ))}
-      </div>
+      {/* Tool buttons - only show when can edit */}
+      {canEdit && (
+        <div className="flex items-center gap-1 border-r border-gray-200 pr-4">
+          {tools.map((t) => (
+            <button
+              key={t.id}
+              onClick={() => setTool(t.id)}
+              className={`p-2 rounded-lg transition-colors ${
+                tool === t.id
+                  ? 'bg-blue-100 text-blue-700'
+                  : 'hover:bg-gray-100 text-gray-600'
+              }`}
+              title={t.label}
+            >
+              <span className="text-lg">{t.icon}</span>
+            </button>
+          ))}
+        </div>
+      )}
 
-      {/* Color picker */}
-      <div className="flex items-center gap-1 border-r border-gray-200 pr-4">
-        {colors.map((color) => (
-          <button
-            key={color}
-            onClick={() => setStrokeColor(color)}
-            className={`w-6 h-6 rounded-full border-2 transition-transform ${
-              strokeColor === color ? 'border-blue-500 scale-110' : 'border-gray-300'
-            }`}
-            style={{ backgroundColor: color }}
-            title={color}
-          />
-        ))}
-      </div>
-
-      {/* Stroke width */}
-      <div className="flex items-center gap-1 border-r border-gray-200 pr-4">
-        {strokeWidths.map((width) => (
-          <button
-            key={width}
-            onClick={() => setStrokeWidth(width)}
-            className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${
-              strokeWidth === width
-                ? 'bg-blue-100 text-blue-700'
-                : 'hover:bg-gray-100 text-gray-600'
-            }`}
-            title={`${width}px`}
-          >
-            <div
-              className="rounded-full bg-current"
-              style={{ width: Math.min(width, 16), height: Math.min(width, 16) }}
+      {/* Color picker - only show when can edit */}
+      {canEdit && (
+        <div className="flex items-center gap-1 border-r border-gray-200 pr-4">
+          {colors.map((color) => (
+            <button
+              key={color}
+              onClick={() => setStrokeColor(color)}
+              className={`w-6 h-6 rounded-full border-2 transition-transform ${
+                strokeColor === color ? 'border-blue-500 scale-110' : 'border-gray-300'
+              }`}
+              style={{ backgroundColor: color }}
+              title={color}
             />
-          </button>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
 
-      {/* Undo/Redo */}
-      <div className="flex items-center gap-1 border-r border-gray-200 pr-4">
-        <button
-          onClick={undo}
-          disabled={!canUndo}
-          className={`p-2 rounded-lg transition-colors ${
-            canUndo ? 'hover:bg-gray-100 text-gray-600' : 'text-gray-300 cursor-not-allowed'
-          }`}
-          title="Undo (Ctrl+Z)"
-        >
-          <span className="text-lg">↩️</span>
-        </button>
-        <button
-          onClick={redo}
-          disabled={!canRedo}
-          className={`p-2 rounded-lg transition-colors ${
-            canRedo ? 'hover:bg-gray-100 text-gray-600' : 'text-gray-300 cursor-not-allowed'
-          }`}
-          title="Redo (Ctrl+Shift+Z)"
-        >
-          <span className="text-lg">↪️</span>
-        </button>
-      </div>
+      {/* Stroke width - only show when can edit */}
+      {canEdit && (
+        <div className="flex items-center gap-1 border-r border-gray-200 pr-4">
+          {strokeWidths.map((width) => (
+            <button
+              key={width}
+              onClick={() => setStrokeWidth(width)}
+              className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${
+                strokeWidth === width
+                  ? 'bg-blue-100 text-blue-700'
+                  : 'hover:bg-gray-100 text-gray-600'
+              }`}
+              title={`${width}px`}
+            >
+              <div
+                className="rounded-full bg-current"
+                style={{ width: Math.min(width, 16), height: Math.min(width, 16) }}
+              />
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Undo/Redo - only show when can edit */}
+      {canEdit && (
+        <div className="flex items-center gap-1 border-r border-gray-200 pr-4">
+          <button
+            onClick={undo}
+            disabled={!canUndo}
+            className={`p-2 rounded-lg transition-colors ${
+              canUndo ? 'hover:bg-gray-100 text-gray-600' : 'text-gray-300 cursor-not-allowed'
+            }`}
+            title="Undo (Ctrl+Z)"
+          >
+            <span className="text-lg">↩️</span>
+          </button>
+          <button
+            onClick={redo}
+            disabled={!canRedo}
+            className={`p-2 rounded-lg transition-colors ${
+              canRedo ? 'hover:bg-gray-100 text-gray-600' : 'text-gray-300 cursor-not-allowed'
+            }`}
+            title="Redo (Ctrl+Shift+Z)"
+          >
+            <span className="text-lg">↪️</span>
+          </button>
+        </div>
+      )}
 
       {/* Spacer */}
       <div className="flex-1" />
 
-      {/* Clear canvas */}
-      <button
-        onClick={() => {
-          if (confirm('Clear the entire canvas? This cannot be undone.')) {
-            clearCanvas()
-          }
-        }}
-        className="px-3 py-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors text-sm"
-        title="Clear canvas"
-      >
-        Clear
-      </button>
+      {/* Clear canvas - only show when can edit */}
+      {canEdit && (
+        <button
+          onClick={() => {
+            if (confirm('Clear the entire canvas? This cannot be undone.')) {
+              clearCanvas()
+            }
+          }}
+          className="px-3 py-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors text-sm"
+          title="Clear canvas"
+        >
+          Clear
+        </button>
+      )}
 
       {/* Export menu */}
       <div className="relative">
@@ -184,13 +204,17 @@ export default function Toolbar({ boardId }: ToolbarProps) {
             >
               Export as JSON
             </button>
-            <hr className="my-1 border-gray-200" />
-            <button
-              onClick={() => { fileInputRef.current?.click(); setShowExportMenu(false); }}
-              className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
-            >
-              Import JSON
-            </button>
+            {canEdit && (
+              <>
+                <hr className="my-1 border-gray-200" />
+                <button
+                  onClick={() => { fileInputRef.current?.click(); setShowExportMenu(false); }}
+                  className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
+                >
+                  Import JSON
+                </button>
+              </>
+            )}
           </div>
         )}
         <input
@@ -233,13 +257,19 @@ export default function Toolbar({ boardId }: ToolbarProps) {
         )}
       </div>
 
+      {/* User menu */}
+      <UserMenu onLoginClick={() => setShowLoginModal(true)} />
+
       {/* Share button */}
       <button
         onClick={copyLink}
         className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
       >
-        Share Link
+        {canEdit ? 'Share to Students' : 'Copy Link'}
       </button>
+
+      {/* Login modal */}
+      <LoginModal isOpen={showLoginModal} onClose={() => setShowLoginModal(false)} />
     </div>
   )
 }

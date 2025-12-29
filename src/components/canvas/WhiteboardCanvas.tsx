@@ -25,7 +25,7 @@ export default function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps) {
   const [viewportTransform, setViewportTransform] = useState<number[] | null>(null)
 
   const { tool, strokeColor, strokeWidth, fillColor, setTool, zoom, setZoom } = useCanvasStore()
-  const { initCanvas, collaborators } = useWhiteboardContext()
+  const { initCanvas, collaborators, canEdit } = useWhiteboardContext()
 
   // Zoom functions
   const zoomIn = useCallback(() => {
@@ -128,10 +128,23 @@ export default function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps) {
     }
   }, [initCanvas, setZoom])
 
-  // Update drawing mode based on tool
+  // Update drawing mode based on tool and permissions
   useEffect(() => {
     if (!fabricRef.current) return
     const canvas = fabricRef.current
+
+    // View-only mode: disable all editing
+    if (!canEdit) {
+      canvas.isDrawingMode = false
+      canvas.selection = false
+      canvas.discardActiveObject()
+      canvas.forEachObject((obj: FabricObject) => {
+        obj.selectable = false
+        obj.evented = false
+      })
+      canvas.renderAll()
+      return
+    }
 
     const isDrawingTool = ['pen', 'marker', 'highlighter'].includes(tool)
     const isShapeTool = ['rectangle', 'circle', 'line', 'arrow'].includes(tool)
@@ -166,7 +179,7 @@ export default function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps) {
     }
 
     canvas.renderAll()
-  }, [tool, strokeColor, strokeWidth, spacePressed])
+  }, [tool, strokeColor, strokeWidth, spacePressed, canEdit])
 
   // Update brush color and width
   useEffect(() => {
@@ -181,7 +194,7 @@ export default function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps) {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!fabricRef.current) return
 
-      // Space for panning
+      // Space for panning (always allowed)
       if (e.code === 'Space' && !e.repeat) {
         setSpacePressed(true)
         return
@@ -192,8 +205,8 @@ export default function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps) {
       const activeObj = fabricRef.current.getActiveObject()
       if (activeObj && activeObj.type === 'i-text' && (activeObj as IText).isEditing) return
 
-      // Delete selected objects
-      if ((e.key === 'Delete' || e.key === 'Backspace') && tool === 'select') {
+      // Delete selected objects (only if can edit)
+      if (canEdit && (e.key === 'Delete' || e.key === 'Backspace') && tool === 'select') {
         const activeObjects = fabricRef.current.getActiveObjects()
         if (activeObjects.length > 0) {
           activeObjects.forEach((obj) => fabricRef.current?.remove(obj))
@@ -204,7 +217,7 @@ export default function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps) {
         return
       }
 
-      // Zoom shortcuts
+      // Zoom shortcuts (always allowed)
       if ((e.metaKey || e.ctrlKey) && (e.key === '=' || e.key === '+')) {
         e.preventDefault()
         zoomIn()
@@ -221,7 +234,9 @@ export default function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps) {
         return
       }
 
-      // Tool shortcuts
+      // Tool shortcuts (only if can edit)
+      if (!canEdit) return
+
       const shortcuts: Record<string, Tool> = {
         'v': 'select',
         'p': 'pen',
@@ -256,7 +271,7 @@ export default function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps) {
       window.removeEventListener('keydown', handleKeyDown)
       window.removeEventListener('keyup', handleKeyUp)
     }
-  }, [tool, setTool, zoomIn, zoomOut, zoomReset])
+  }, [tool, setTool, zoomIn, zoomOut, zoomReset, canEdit])
 
   // Shape drawing, eraser, and panning functionality
   useEffect(() => {
@@ -266,7 +281,7 @@ export default function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps) {
     const isShapeTool = ['rectangle', 'circle', 'line', 'arrow'].includes(tool)
 
     const handleMouseDown = (e: any) => {
-      // Panning with space
+      // Panning with space (always allowed)
       if (spacePressed) {
         isPanningRef.current = true
         const point = canvas.getScenePoint(e.e)
@@ -274,6 +289,9 @@ export default function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps) {
         canvas.selection = false
         return
       }
+
+      // Skip all editing operations if can't edit
+      if (!canEdit) return
 
       // Eraser
       if (tool === 'eraser') {
@@ -461,7 +479,7 @@ export default function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps) {
       canvas.off('mouse:move', handleMouseMove)
       canvas.off('mouse:up', handleMouseUp)
     }
-  }, [tool, strokeColor, strokeWidth, fillColor, spacePressed])
+  }, [tool, strokeColor, strokeWidth, fillColor, spacePressed, canEdit])
 
   // Update viewport transform when zoom changes
   useEffect(() => {
@@ -474,7 +492,7 @@ export default function WhiteboardCanvas({ boardId }: WhiteboardCanvasProps) {
     <div ref={containerRef} className="w-full h-full relative">
       <canvas
         ref={canvasRef}
-        className={spacePressed ? 'cursor-grab' : 'cursor-crosshair'}
+        className={spacePressed ? 'cursor-grab' : canEdit ? 'cursor-crosshair' : 'cursor-default'}
       />
       <CursorOverlay
         users={collaborators}
