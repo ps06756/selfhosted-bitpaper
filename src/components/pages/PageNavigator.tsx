@@ -63,7 +63,24 @@ export default function PageNavigator({ canEdit }: PageNavigatorProps) {
                 onClick={(e) => {
                   e.stopPropagation()
                   if (confirm(`Delete ${page.name}?`)) {
+                    // Save current page first if we're not deleting it
+                    if (index !== currentPageIndex) {
+                      saveCurrentPage()
+                    }
+
+                    // Calculate what the new current page will be after deletion
+                    let newCurrentIndex = currentPageIndex
+                    if (index < currentPageIndex) {
+                      newCurrentIndex = currentPageIndex - 1
+                    } else if (index === currentPageIndex) {
+                      newCurrentIndex = Math.min(index, pages.length - 2)
+                    }
+
+                    // Delete the page
                     deletePage(index)
+
+                    // Load the new current page
+                    loadPage(newCurrentIndex)
                   }
                 }}
                 className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600"
