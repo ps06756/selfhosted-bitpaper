@@ -33,7 +33,7 @@ const strokeWidths = [2, 4, 6, 10, 16]
 
 export default function Toolbar({ boardId }: ToolbarProps) {
   const { tool, setTool, strokeColor, setStrokeColor, strokeWidth, setStrokeWidth, canUndo, canRedo } = useCanvasStore()
-  const { undo, redo, exportPNG, exportSVG, exportJSON, importJSON, clearCanvas, collaborators, isConnected, canEdit, getShareLink } = useWhiteboardContext()
+  const { undo, redo, exportPNG, exportSVG, exportJSON, exportPDF, importJSON, clearCanvas, collaborators, isConnected, canEdit, getShareLink, pages } = useWhiteboardContext()
   const [showExportMenu, setShowExportMenu] = useState(false)
   const [showLoginModal, setShowLoginModal] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -204,6 +204,14 @@ export default function Toolbar({ boardId }: ToolbarProps) {
             >
               Export as JSON
             </button>
+            {pages.length > 0 && (
+              <button
+                onClick={() => { exportPDF(); setShowExportMenu(false); }}
+                className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
+              >
+                Export as PDF {pages.length > 1 ? `(${pages.length} pages)` : ''}
+              </button>
+            )}
             {canEdit && (
               <>
                 <hr className="my-1 border-gray-200" />

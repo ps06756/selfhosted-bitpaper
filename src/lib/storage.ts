@@ -1,4 +1,6 @@
 import { Canvas } from 'fabric'
+import { Page } from '@/types/canvas'
+import * as SupabaseBoards from '@/lib/supabase/boards'
 
 const STORAGE_PREFIX = 'openboard_'
 const BOARDS_LIST_KEY = 'openboard_boards'
@@ -15,18 +17,19 @@ export class StorageManager {
   private canvas: Canvas | null = null
   private boardId: string
   private saveTimeout: NodeJS.Timeout | null = null
+  private useSupabase: boolean = false
+  private userId: string | null = null
 
-  constructor(boardId: string) {
+  constructor(boardId: string, userId?: string | null) {
     this.boardId = boardId
+    this.userId = userId || null
+    this.useSupabase = SupabaseBoards.isSupabaseConfigured()
   }
 
   init(canvas: Canvas) {
     this.canvas = canvas
 
-    // Load existing board data
-    this.load()
-
-    // Set up auto-save
+    // Set up auto-save for canvas changes
     canvas.on('object:added', () => this.scheduleSave())
     canvas.on('object:modified', () => this.scheduleSave())
     canvas.on('object:removed', () => this.scheduleSave())
@@ -41,6 +44,10 @@ export class StorageManager {
     return `${STORAGE_PREFIX}board_${this.boardId}`
   }
 
+  private getPagesStorageKey() {
+    return `${STORAGE_PREFIX}pages_${this.boardId}`
+  }
+
   private scheduleSave() {
     if (this.saveTimeout) {
       clearTimeout(this.saveTimeout)
@@ -48,42 +55,102 @@ export class StorageManager {
     this.saveTimeout = setTimeout(() => this.save(), AUTO_SAVE_DELAY)
   }
 
+  // Save current canvas state (called by auto-save)
   save() {
     if (!this.canvas || typeof window === 'undefined') return
 
     try {
       const json = JSON.stringify(this.canvas.toJSON())
       localStorage.setItem(this.getStorageKey(), json)
-
-      // Update boards list
       this.updateBoardsList()
     } catch (e) {
       console.error('Failed to save board:', e)
     }
   }
 
-  load(): Promise<void> {
-    return new Promise((resolve) => {
-      if (!this.canvas || typeof window === 'undefined') {
-        resolve()
-        return
-      }
+  // Load canvas state from storage
+  async load(): Promise<void> {
+    if (!this.canvas || typeof window === 'undefined') return
 
-      try {
-        const json = localStorage.getItem(this.getStorageKey())
-        if (json) {
-          this.canvas.loadFromJSON(json).then(() => {
-            this.canvas?.renderAll()
-            resolve()
-          })
-        } else {
-          resolve()
-        }
-      } catch (e) {
-        console.error('Failed to load board:', e)
-        resolve()
+    try {
+      // Try localStorage first (faster)
+      const json = localStorage.getItem(this.getStorageKey())
+      if (json) {
+        await this.canvas.loadFromJSON(json)
+        this.canvas.renderAll()
       }
-    })
+    } catch (e) {
+      console.error('Failed to load board:', e)
+    }
+  }
+
+  // Load all pages for this board
+  async loadPages(): Promise<Page[]> {
+    if (typeof window === 'undefined') return []
+
+    // Try Supabase first
+    if (this.useSupabase) {
+      const pages = await SupabaseBoards.getPages(this.boardId)
+      if (pages.length > 0) {
+        // Cache to localStorage
+        this.savePagesToLocalStorage(pages)
+        return pages
+      }
+    }
+
+    // Fall back to localStorage
+    return this.loadPagesFromLocalStorage()
+  }
+
+  // Save all pages
+  async savePages(pages: Page[]): Promise<boolean> {
+    if (typeof window === 'undefined') return false
+
+    // Always save to localStorage as backup
+    this.savePagesToLocalStorage(pages)
+
+    // Save to Supabase if configured
+    if (this.useSupabase) {
+      // Ensure board exists
+      await SupabaseBoards.getOrCreateBoard(this.boardId, this.userId)
+      return await SupabaseBoards.saveAllPages(this.boardId, pages)
+    }
+
+    return true
+  }
+
+  // Save a single page
+  async savePage(page: Page, pageIndex: number): Promise<boolean> {
+    if (typeof window === 'undefined') return false
+
+    // Save to Supabase if configured
+    if (this.useSupabase) {
+      await SupabaseBoards.getOrCreateBoard(this.boardId, this.userId)
+      return await SupabaseBoards.savePage(this.boardId, page, pageIndex)
+    }
+
+    // localStorage handled by savePages batch
+    return true
+  }
+
+  private loadPagesFromLocalStorage(): Page[] {
+    try {
+      const json = localStorage.getItem(this.getPagesStorageKey())
+      if (json) {
+        return JSON.parse(json)
+      }
+    } catch (e) {
+      console.error('Failed to load pages from localStorage:', e)
+    }
+    return []
+  }
+
+  private savePagesToLocalStorage(pages: Page[]) {
+    try {
+      localStorage.setItem(this.getPagesStorageKey(), JSON.stringify(pages))
+    } catch (e) {
+      console.error('Failed to save pages to localStorage:', e)
+    }
   }
 
   private updateBoardsList() {
@@ -119,7 +186,28 @@ export class StorageManager {
     }
   }
 
-  static getRecentBoards(): BoardMetadata[] {
+  // Check if current user can edit the board
+  async canEdit(): Promise<boolean> {
+    if (this.useSupabase) {
+      return await SupabaseBoards.canEditBoard(this.boardId, this.userId)
+    }
+    // Without Supabase, use local permissions
+    return true
+  }
+
+  static async getRecentBoards(userId?: string | null): Promise<BoardMetadata[]> {
+    // Try Supabase first
+    if (SupabaseBoards.isSupabaseConfigured()) {
+      const boards = await SupabaseBoards.getRecentBoards(userId)
+      return boards.map((b) => ({
+        id: b.id,
+        name: b.name || `Board ${b.id}`,
+        lastModified: new Date(b.updated_at).getTime(),
+        createdAt: new Date(b.created_at).getTime(),
+      }))
+    }
+
+    // Fall back to localStorage
     if (typeof window === 'undefined') return []
 
     try {
@@ -135,8 +223,9 @@ export class StorageManager {
     if (typeof window === 'undefined') return
 
     try {
-      // Remove board data
+      // Remove board data from localStorage
       localStorage.removeItem(`${STORAGE_PREFIX}board_${boardId}`)
+      localStorage.removeItem(`${STORAGE_PREFIX}pages_${boardId}`)
 
       // Update boards list
       const boardsJson = localStorage.getItem(BOARDS_LIST_KEY)
@@ -155,22 +244,13 @@ export class StorageManager {
     return JSON.stringify(this.canvas.toJSON(), null, 2)
   }
 
-  importFromJSON(json: string): Promise<void> {
-    return new Promise((resolve, reject) => {
-      if (!this.canvas) {
-        reject(new Error('Canvas not initialized'))
-        return
-      }
+  async importFromJSON(json: string): Promise<void> {
+    if (!this.canvas) {
+      throw new Error('Canvas not initialized')
+    }
 
-      try {
-        this.canvas.loadFromJSON(json).then(() => {
-          this.canvas?.renderAll()
-          this.save()
-          resolve()
-        })
-      } catch (e) {
-        reject(e)
-      }
-    })
+    await this.canvas.loadFromJSON(json)
+    this.canvas.renderAll()
+    this.save()
   }
 }

@@ -1,17 +1,24 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { generateBoardId } from '@/lib/board-id'
 import { StorageManager, BoardMetadata } from '@/lib/storage'
+import { useAuth } from '@/contexts/AuthContext'
 
 export default function Home() {
   const router = useRouter()
   const [recentBoards, setRecentBoards] = useState<BoardMetadata[]>([])
+  const { user } = useAuth()
+
+  const loadRecentBoards = useCallback(async () => {
+    const boards = await StorageManager.getRecentBoards(user?.id)
+    setRecentBoards(boards)
+  }, [user?.id])
 
   useEffect(() => {
-    setRecentBoards(StorageManager.getRecentBoards())
-  }, [])
+    loadRecentBoards()
+  }, [loadRecentBoards])
 
   const createNewBoard = () => {
     const boardId = generateBoardId()
@@ -22,11 +29,11 @@ export default function Home() {
     router.push(`/board/${boardId}`)
   }
 
-  const deleteBoard = (e: React.MouseEvent, boardId: string) => {
+  const deleteBoard = async (e: React.MouseEvent, boardId: string) => {
     e.stopPropagation()
     if (confirm('Delete this board? This cannot be undone.')) {
       StorageManager.deleteBoard(boardId)
-      setRecentBoards(StorageManager.getRecentBoards())
+      await loadRecentBoards()
     }
   }
 
