@@ -17,10 +17,9 @@ export async function POST(request: NextRequest) {
     const cookieStore = await cookies()
     const vercelToken = cookieStore.get('vercel_token')?.value
     const supabaseToken = cookieStore.get('supabase_token')?.value
-    const railwayToken = cookieStore.get('railway_token')?.value
     const vercelTeamId = cookieStore.get('vercel_team_id')?.value
 
-    if (!vercelToken || !supabaseToken || !railwayToken) {
+    if (!vercelToken || !supabaseToken) {
       return NextResponse.json(
         { error: 'Missing required authentication tokens. Please reconnect your accounts.' },
         { status: 401 }
@@ -35,11 +34,7 @@ export async function POST(request: NextRequest) {
     console.log('Running database migrations...')
     await runSupabaseMigrations(supabaseProject)
 
-    // Step 3: Deploy WebSocket server to Railway
-    console.log('Deploying WebSocket server to Railway...')
-    const railwayDeployment = await deployToRailway(railwayToken, projectName)
-
-    // Step 4: Deploy to Vercel with environment variables
+    // Step 3: Deploy to Vercel with environment variables
     console.log('Deploying to Vercel...')
     const vercelDeployment = await deployToVercel(
       vercelToken,
@@ -49,21 +44,18 @@ export async function POST(request: NextRequest) {
         NEXT_PUBLIC_SUPABASE_URL: supabaseProject.url,
         NEXT_PUBLIC_SUPABASE_ANON_KEY: supabaseProject.anonKey,
         SUPABASE_SERVICE_ROLE_KEY: supabaseProject.serviceRoleKey,
-        NEXT_PUBLIC_WS_URL: railwayDeployment.url,
       }
     )
 
     // Clear tokens from cookies
     cookieStore.delete('vercel_token')
     cookieStore.delete('supabase_token')
-    cookieStore.delete('railway_token')
     cookieStore.delete('vercel_team_id')
 
     return NextResponse.json({
       success: true,
       url: vercelDeployment.url,
       supabaseUrl: supabaseProject.dashboardUrl,
-      railwayUrl: railwayDeployment.dashboardUrl,
     })
   } catch (error) {
     console.error('Deployment error:', error)
@@ -165,41 +157,112 @@ async function waitForSupabaseProject(token: string, projectId: string) {
 }
 
 async function runSupabaseMigrations(project: { id: string; url: string; serviceRoleKey: string }) {
-  // Run SQL to create tables
+  // Run SQL to create tables - matches supabase/schema.sql
   const sql = `
     -- Boards table
     CREATE TABLE IF NOT EXISTS boards (
       id TEXT PRIMARY KEY,
-      owner_id UUID REFERENCES auth.users(id),
+      owner_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+      owner_session TEXT,
       name TEXT,
       created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
       updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
     );
 
+    -- Pages table
+    CREATE TABLE IF NOT EXISTS pages (
+      id TEXT PRIMARY KEY,
+      board_id TEXT REFERENCES boards(id) ON DELETE CASCADE,
+      page_index INTEGER NOT NULL,
+      name TEXT,
+      canvas_data TEXT,
+      thumbnail TEXT,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    );
+
+    -- Index for faster page lookups
+    CREATE INDEX IF NOT EXISTS pages_board_id_idx ON pages(board_id);
+    CREATE INDEX IF NOT EXISTS pages_board_index_idx ON pages(board_id, page_index);
+
     -- Enable RLS
     ALTER TABLE boards ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE pages ENABLE ROW LEVEL SECURITY;
 
-    -- Owner can do everything
-    CREATE POLICY "Owner full access" ON boards
-      FOR ALL USING (auth.uid() = owner_id);
-
-    -- Anyone can read (for viewers)
-    CREATE POLICY "Public read" ON boards
+    -- Boards policies
+    CREATE POLICY "Public read access for boards" ON boards
       FOR SELECT USING (true);
 
-    -- Update trigger
-    CREATE OR REPLACE FUNCTION update_updated_at()
+    CREATE POLICY "Owner can insert boards" ON boards
+      FOR INSERT WITH CHECK (
+        auth.uid() = owner_id OR
+        owner_id IS NULL
+      );
+
+    CREATE POLICY "Owner can update boards" ON boards
+      FOR UPDATE USING (
+        auth.uid() = owner_id OR
+        (owner_id IS NULL AND owner_session IS NOT NULL)
+      );
+
+    CREATE POLICY "Owner can delete boards" ON boards
+      FOR DELETE USING (
+        auth.uid() = owner_id OR
+        (owner_id IS NULL AND owner_session IS NOT NULL)
+      );
+
+    -- Pages policies
+    CREATE POLICY "Public read access for pages" ON pages
+      FOR SELECT USING (true);
+
+    CREATE POLICY "Board owner can insert pages" ON pages
+      FOR INSERT WITH CHECK (
+        EXISTS (
+          SELECT 1 FROM boards
+          WHERE boards.id = pages.board_id
+          AND (boards.owner_id = auth.uid() OR boards.owner_id IS NULL)
+        )
+      );
+
+    CREATE POLICY "Board owner can update pages" ON pages
+      FOR UPDATE USING (
+        EXISTS (
+          SELECT 1 FROM boards
+          WHERE boards.id = pages.board_id
+          AND (boards.owner_id = auth.uid() OR boards.owner_id IS NULL)
+        )
+      );
+
+    CREATE POLICY "Board owner can delete pages" ON pages
+      FOR DELETE USING (
+        EXISTS (
+          SELECT 1 FROM boards
+          WHERE boards.id = pages.board_id
+          AND (boards.owner_id = auth.uid() OR boards.owner_id IS NULL)
+        )
+      );
+
+    -- Update trigger function
+    CREATE OR REPLACE FUNCTION update_updated_at_column()
     RETURNS TRIGGER AS $$
     BEGIN
       NEW.updated_at = NOW();
       RETURN NEW;
     END;
-    $$ LANGUAGE plpgsql;
+    $$ language 'plpgsql';
 
-    CREATE TRIGGER boards_updated_at
+    -- Triggers for updated_at
+    DROP TRIGGER IF EXISTS update_boards_updated_at ON boards;
+    CREATE TRIGGER update_boards_updated_at
       BEFORE UPDATE ON boards
       FOR EACH ROW
-      EXECUTE FUNCTION update_updated_at();
+      EXECUTE FUNCTION update_updated_at_column();
+
+    DROP TRIGGER IF EXISTS update_pages_updated_at ON pages;
+    CREATE TRIGGER update_pages_updated_at
+      BEFORE UPDATE ON pages
+      FOR EACH ROW
+      EXECUTE FUNCTION update_updated_at_column();
   `
 
   const response = await fetch(`${project.url}/rest/v1/rpc/exec_sql`, {
@@ -216,70 +279,6 @@ async function runSupabaseMigrations(project: { id: string; url: string; service
   // In production, use Supabase migrations or the SQL editor API
   if (!response.ok) {
     console.warn('Migration via RPC failed, tables may need manual creation')
-  }
-}
-
-async function deployToRailway(token: string, projectName: string) {
-  // Create project
-  const createProjectResponse = await fetch('https://backboard.railway.app/graphql/v2', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify({
-      query: `
-        mutation createProject($name: String!) {
-          projectCreate(input: { name: $name }) {
-            id
-            name
-          }
-        }
-      `,
-      variables: { name: `openboard-ws-${projectName}` },
-    }),
-  })
-
-  const projectData = await createProjectResponse.json()
-  const projectId = projectData.data?.projectCreate?.id
-
-  if (!projectId) {
-    throw new Error('Failed to create Railway project')
-  }
-
-  // Deploy from GitHub template (y-websocket server)
-  const deployResponse = await fetch('https://backboard.railway.app/graphql/v2', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify({
-      query: `
-        mutation deployService($projectId: String!, $repo: String!) {
-          serviceCreate(input: {
-            projectId: $projectId
-            source: { repo: $repo }
-          }) {
-            id
-          }
-        }
-      `,
-      variables: {
-        projectId,
-        repo: 'https://github.com/yjs/y-websocket', // Or your own WS server repo
-      },
-    }),
-  })
-
-  const deployData = await deployResponse.json()
-
-  // Get the deployment URL
-  // Note: This is simplified - in production you'd need to wait for deployment and get the actual URL
-  return {
-    projectId,
-    url: `wss://${projectName}-ws.up.railway.app`,
-    dashboardUrl: `https://railway.app/project/${projectId}`,
   }
 }
 

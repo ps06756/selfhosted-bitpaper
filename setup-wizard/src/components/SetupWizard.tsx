@@ -2,12 +2,11 @@
 
 import { useState } from 'react'
 
-type Step = 'vercel' | 'supabase' | 'railway' | 'deploy' | 'done'
+type Step = 'vercel' | 'supabase' | 'deploy' | 'done'
 
 interface ConnectionStatus {
   vercel: boolean
   supabase: boolean
-  railway: boolean
 }
 
 export default function SetupWizard() {
@@ -15,7 +14,6 @@ export default function SetupWizard() {
   const [connections, setConnections] = useState<ConnectionStatus>({
     vercel: false,
     supabase: false,
-    railway: false,
   })
   const [projectName, setProjectName] = useState('')
   const [deploying, setDeploying] = useState(false)
@@ -25,7 +23,6 @@ export default function SetupWizard() {
   const steps: { id: Step; label: string; description: string }[] = [
     { id: 'vercel', label: 'Connect Vercel', description: 'For hosting your app' },
     { id: 'supabase', label: 'Connect Supabase', description: 'For database & auth' },
-    { id: 'railway', label: 'Connect Railway', description: 'For real-time sync' },
     { id: 'deploy', label: 'Deploy', description: 'Launch your whiteboard' },
   ]
 
@@ -63,24 +60,6 @@ export default function SetupWizard() {
         redirect_uri: redirectUri,
         response_type: 'code',
         scope: 'all',
-      }).toString()
-  }
-
-  const connectRailway = () => {
-    const clientId = process.env.NEXT_PUBLIC_RAILWAY_CLIENT_ID
-    const redirectUri = `${window.location.origin}/api/auth/railway/callback`
-
-    if (!clientId) {
-      setError('Railway OAuth not configured. Please set NEXT_PUBLIC_RAILWAY_CLIENT_ID')
-      return
-    }
-
-    window.location.href = `https://railway.app/oauth/authorize?` +
-      new URLSearchParams({
-        client_id: clientId,
-        redirect_uri: redirectUri,
-        response_type: 'code',
-        scope: 'write',
       }).toString()
   }
 
@@ -128,12 +107,6 @@ export default function SetupWizard() {
 
       if (params.get('supabase') === 'connected') {
         setConnections(prev => ({ ...prev, supabase: true }))
-        setCurrentStep('railway')
-        window.history.replaceState({}, '', window.location.pathname)
-      }
-
-      if (params.get('railway') === 'connected') {
-        setConnections(prev => ({ ...prev, railway: true }))
         setCurrentStep('deploy')
         window.history.replaceState({}, '', window.location.pathname)
       }
@@ -285,35 +258,6 @@ export default function SetupWizard() {
             </div>
           )}
 
-          {currentStep === 'railway' && (
-            <div className="text-center">
-              <div className="w-16 h-16 bg-purple-600 rounded-xl flex items-center justify-center mx-auto mb-6">
-                <span className="text-white text-2xl">🚂</span>
-              </div>
-              <h2 className="text-2xl font-bold mb-2">Connect Railway</h2>
-              <p className="text-gray-600 mb-6">
-                Railway runs your real-time collaboration server. Free $5/month credit included.
-              </p>
-              <button
-                onClick={connectRailway}
-                className="bg-purple-600 text-white px-8 py-4 rounded-xl text-lg font-semibold hover:bg-purple-700 transition-colors"
-              >
-                Connect Railway Account
-              </button>
-              <p className="text-sm text-gray-500 mt-4">
-                No account yet?{' '}
-                <a
-                  href="https://railway.app"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-blue-600 hover:underline"
-                >
-                  Sign up free
-                </a>
-              </p>
-            </div>
-          )}
-
           {currentStep === 'deploy' && (
             <div className="text-center">
               <div className="w-16 h-16 bg-blue-600 rounded-xl flex items-center justify-center mx-auto mb-6">
@@ -366,7 +310,7 @@ export default function SetupWizard() {
                   <ul className="mt-2 space-y-1">
                     <li>✓ Creating your Supabase database...</li>
                     <li>✓ Setting up authentication...</li>
-                    <li>✓ Deploying WebSocket server to Railway...</li>
+                    <li>✓ Running database migrations...</li>
                     <li>✓ Deploying your app to Vercel...</li>
                   </ul>
                 </div>
@@ -379,7 +323,7 @@ export default function SetupWizard() {
         {currentStep !== 'vercel' && (
           <button
             onClick={() => {
-              const stepOrder: Step[] = ['vercel', 'supabase', 'railway', 'deploy', 'done']
+              const stepOrder: Step[] = ['vercel', 'supabase', 'deploy', 'done']
               const currentIndex = stepOrder.indexOf(currentStep)
               if (currentIndex > 0) {
                 setCurrentStep(stepOrder[currentIndex - 1])
