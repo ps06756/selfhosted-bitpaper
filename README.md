@@ -36,7 +36,7 @@ We're building a **3-click deployment system** that will:
 1. **Connect your Vercel account** - Click to authorize
 2. **Connect your Supabase account** - Click to authorize
 3. **Click Deploy** - We automatically:
-   - Create your database
+   - Create your database with all tables
    - Deploy your app
    - Configure everything
 
@@ -48,7 +48,6 @@ We're building a **3-click deployment system** that will:
 |---------|---------|------|
 | Vercel | Hosts your whiteboard app | Free tier |
 | Supabase | Database + Authentication | Free tier |
-| Railway | Real-time sync server | Free tier ($5/month credit) |
 
 **Total cost: $0** (within free tier limits)
 
@@ -57,14 +56,14 @@ We're building a **3-click deployment system** that will:
 ```
 Teacher's Browser  ←──→  Vercel (Your App)  ←──→  Supabase (Your Database)
        ↑
-       └──────────────→  Railway (WebSocket)  ←──────── Student's Browser
-                         (Real-time sync)
+       └──── WebRTC (peer-to-peer) ────→ Student's Browser
+             (Real-time sync via public signaling)
 ```
 
 Each teacher gets their own:
 - App URL: `your-name.vercel.app`
 - Database: Stored in your Supabase account
-- WebSocket server: For real-time collaboration
+- Real-time sync uses WebRTC (no server needed)
 
 ## Current Features
 
@@ -124,26 +123,28 @@ npm run dev
 ## Roadmap
 
 - [x] Core whiteboard with drawing tools
-- [x] Real-time collaboration (Yjs + WebSocket)
+- [x] Real-time collaboration (Yjs + WebRTC)
 - [x] Undo/Redo
-- [x] Export (PNG, SVG, JSON)
+- [x] Export (PNG, SVG, JSON, PDF)
 - [x] Zoom & Pan
+- [x] Teacher authentication (Supabase Auth)
+- [x] Teacher-only editing permissions
+- [x] Funky board IDs (e.g., `happy-penguin-42`)
+- [x] Multi-page boards with thumbnails
+- [x] Supabase storage with localStorage fallback
 - [ ] **Automated onboarding wizard** *(in progress)*
-- [ ] Teacher authentication (Supabase Auth)
-- [ ] Teacher-only editing permissions
-- [ ] Funky board IDs (e.g., `happy-penguin-42`)
 - [ ] Mobile responsive toolbar
 
 ## Tech Stack
 
-- **Frontend:** Next.js 16, React, TypeScript
+- **Frontend:** Next.js 14, React, TypeScript
 - **Canvas:** Fabric.js v6
 - **Styling:** Tailwind CSS
 - **State:** Zustand
-- **Real-time:** Yjs + y-websocket
-- **Database:** Supabase (PostgreSQL) *(coming soon)*
-- **Auth:** Supabase Auth *(coming soon)*
-- **Hosting:** Vercel + Railway
+- **Real-time:** Yjs + WebRTC (y-webrtc)
+- **Database:** Supabase (PostgreSQL)
+- **Auth:** Supabase Auth
+- **Hosting:** Vercel
 
 ## Contributing
 

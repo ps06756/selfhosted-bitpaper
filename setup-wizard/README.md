@@ -5,13 +5,15 @@ This is the automated onboarding app that helps teachers deploy their own OpenBo
 ## How It Works
 
 1. Teacher visits this wizard
-2. Connects their Vercel, Supabase, and Railway accounts via OAuth
+2. Connects their Vercel and Supabase accounts via OAuth
 3. Clicks "Deploy"
 4. We automatically:
    - Create a Supabase project with database tables
-   - Deploy the WebSocket server to Railway
+   - Run database migrations (boards, pages, RLS policies)
    - Deploy the main app to Vercel
    - Configure all environment variables
+
+Real-time collaboration uses WebRTC with public signaling servers, so no additional infrastructure is needed.
 
 ## Setup (For Wizard Maintainers)
 
@@ -29,13 +31,6 @@ To run this wizard, you need to set up OAuth applications with each provider:
 1. Go to [Supabase Dashboard](https://supabase.com/dashboard/account/tokens)
 2. Create OAuth application
 3. Set redirect URL to: `https://your-wizard-url.com/api/auth/supabase/callback`
-4. Copy Client ID and Client Secret to `.env`
-
-### 3. Railway OAuth
-
-1. Go to [Railway Dashboard](https://railway.app/account/tokens)
-2. Create OAuth application
-3. Set redirect URL to: `https://your-wizard-url.com/api/auth/railway/callback`
 4. Copy Client ID and Client Secret to `.env`
 
 ## Development
@@ -76,11 +71,10 @@ setup-wizard/
 │   │   └── api/
 │   │       ├── auth/
 │   │       │   ├── vercel/    # Vercel OAuth callback
-│   │       │   ├── supabase/  # Supabase OAuth callback
-│   │       │   └── railway/   # Railway OAuth callback
+│   │       │   └── supabase/  # Supabase OAuth callback
 │   │       └── deploy/        # Deployment orchestration
 │   ├── components/
-│   │   └── SetupWizard.tsx    # Main wizard UI
+│   │   └── SetupWizard.tsx    # Main wizard UI (3-step flow)
 │   └── lib/                   # API helpers (future)
 └── package.json
 ```
